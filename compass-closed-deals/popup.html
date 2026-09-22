@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compass - Closed Deals</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="header">
+    <div class="header-logo">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="13" stroke="url(#grad)" stroke-width="2"/>
+        <polygon points="14,4 17,13 14,11 11,13" fill="#818cf8"/>
+        <polygon points="14,24 11,15 14,17 17,15" fill="#6366f1"/>
+        <defs><linearGradient id="grad" x1="0" y1="0" x2="28" y2="28">
+          <stop offset="0%" stop-color="#818cf8"/>
+          <stop offset="100%" stop-color="#6366f1"/>
+        </linearGradient></defs>
+      </svg>
+    </div>
+    <div class="header-text">
+      <h1>Compass</h1>
+      <p>Closed Deals Automation</p>
+    </div>
+    <div class="header-version">v1.0</div>
+  </header>
+
+  <!-- ===== SCREEN 1: IMPORT ===== -->
+  <div id="screen-import" class="screen active">
+    <div class="upload-area" id="upload-area">
+      <div class="upload-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <polyline points="9 15 12 12 15 15"/>
+        </svg>
+      </div>
+      <p class="upload-title">Drop your Excel file here</p>
+      <p class="upload-subtitle">or click to browse (.xlsx, .xls)</p>
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+
+    <!-- File info (shown after upload) -->
+    <div id="file-info" class="file-info hidden">
+      <div class="file-info-icon">📄</div>
+      <div class="file-info-details">
+        <span class="file-name" id="file-name">—</span>
+        <span class="file-size" id="file-size">—</span>
+      </div>
+      <button class="file-remove" id="file-remove" title="Remove file">✕</button>
+    </div>
+
+    <!-- Preview section -->
+    <div id="preview-section" class="preview-section hidden">
+      <div class="preview-header">
+        <h3>Preview</h3>
+        <div class="preview-stats">
+          <span class="badge badge-accent" id="preview-agents">0 Agents</span>
+          <span class="badge badge-accent" id="preview-listings">0 Listings</span>
+        </div>
+      </div>
+      <div class="preview-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Agent Profile Link</th>
+              <th>Listing ID</th>
+            </tr>
+          </thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+      <button id="btn-start" class="btn btn-primary btn-full">
+        <span class="btn-icon">▶</span> Start Processing
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 2: PROGRESS ===== -->
+  <div id="screen-progress" class="screen">
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat-card stat-added">
+        <div class="stat-value" id="stat-added">0</div>
+        <div class="stat-label">Added</div>
+      </div>
+      <div class="stat-card stat-exists">
+        <div class="stat-value" id="stat-exists">0</div>
+        <div class="stat-label">Exists</div>
+      </div>
+      <div class="stat-card stat-invalid">
+        <div class="stat-value" id="stat-invalid">0</div>
+        <div class="stat-label">Invalid</div>
+      </div>
+      <div class="stat-card stat-queue">
+        <div class="stat-value" id="stat-queue">0</div>
+        <div class="stat-label">Queue</div>
+      </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="progress-wrapper">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <span class="progress-text" id="progress-text">0%</span>
+    </div>
+
+    <!-- Current Processing -->
+    <div class="current-processing" id="current-processing">
+      <div class="processing-row">
+        <span class="processing-label">Agent</span>
+        <span class="processing-value" id="processing-agent">Waiting...</span>
+      </div>
+      <div class="processing-row">
+        <span class="processing-label">Listing</span>
+        <span class="processing-value processing-mono" id="processing-listing">—</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button id="btn-pause" class="btn btn-warning">
+        <span class="btn-icon">⏸</span> Pause
+      </button>
+      <button id="btn-resume" class="btn btn-primary hidden">
+        <span class="btn-icon">▶</span> Resume
+      </button>
+      <button id="btn-stop" class="btn btn-danger">
+        <span class="btn-icon">⏹</span> Stop
+      </button>
+      <button id="btn-export-progress" class="btn btn-secondary">
+        <span class="btn-icon">📥</span> Export
+      </button>
+    </div>
+
+    <!-- Live Logs -->
+    <div class="logs-section">
+      <div class="logs-header">
+        <h3>Live Activity</h3>
+        <div class="log-indicator" id="log-indicator"></div>
+      </div>
+      <div class="logs-container" id="logs-container">
+        <div class="log-empty">Waiting to start...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 3: DASHBOARD ===== -->
+  <div id="screen-dashboard" class="screen">
+    <div class="dashboard-hero">
+      <div class="hero-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </div>
+      <h2>Processing Complete</h2>
+      <p class="hero-subtitle" id="hero-subtitle">All records have been processed</p>
+    </div>
+
+    <!-- Dashboard Stats -->
+    <div class="stats-grid stats-dashboard">
+      <div class="stat-card">
+        <div class="stat-value" id="dash-total">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat-card stat-added">
+        <div class="stat-value" id="dash-added">0</div>
+        <div class="stat-label">Added</div>
+      </div>
+      <div class="stat-card stat-exists">
+        <div class="stat-value" id="dash-exists">0</div>
+        <div class="stat-label">Exists</div>
+      </div>
+      <div class="stat-card stat-invalid">
+        <div class="stat-value" id="dash-invalid">0</div>
+        <div class="stat-label">Invalid</div>
+      </div>
+      <div class="stat-card stat-error">
+        <div class="stat-value" id="dash-error">0</div>
+        <div class="stat-label">Errors</div>
+      </div>
+    </div>
+
+    <!-- Dashboard Actions -->
+    <div class="dashboard-actions">
+      <button id="btn-export-final" class="btn btn-primary btn-full btn-glow">
+        <span class="btn-icon">📥</span> Export Results (.xlsx)
+      </button>
+      <button id="btn-new-session" class="btn btn-secondary btn-full">
+        <span class="btn-icon">🔄</span> New Session
+      </button>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="lib/xlsx.full.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
