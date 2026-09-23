@@ -232,7 +232,7 @@ function countListingCards() {
  * Watches for:
  *   - Error toasts: "Closed deal already exists" or "Invalid listing data provided"
  *   - Success: A new listing card appears (REMOVE button count increases)
- * Timeout after 30 seconds.
+ * Timeout after 16 seconds.
  */
 function detectOutcome(cardCountBefore) {
   return new Promise((resolve) => {
@@ -305,7 +305,7 @@ function detectOutcome(cardCountBefore) {
 
       cleanup();
       resolve('Error - Timeout');
-    }, 30000);
+    }, 16000);
   });
 }
 
