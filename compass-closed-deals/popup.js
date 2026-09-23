@@ -1,5 +1,5 @@
 /* ============================================
-   COMPASS - CLOSED DEALS | POPUP LOGIC
+   CLOSED DEALS | POPUP LOGIC
    Handles file import, UI updates, controls,
    message passing, session recovery, and export.
    ============================================ */
@@ -18,12 +18,18 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   cacheElements();
+  if (el.headerVersion) {
+    const manifestData = chrome.runtime.getManifest();
+    el.headerVersion.textContent = 'v' + manifestData.version;
+  }
   setupEventListeners();
   setupMessageListener();
   await checkExistingSession();
 }
 
 function cacheElements() {
+  el.btnDownloadTemplate = document.getElementById('btn-download-template');
+  el.headerVersion = document.getElementById('header-version');
   // Screens
   el.screenImport = document.getElementById('screen-import');
   el.screenProgress = document.getElementById('screen-progress');
@@ -54,6 +60,7 @@ function cacheElements() {
   el.processingListing = document.getElementById('processing-listing');
   el.btnPause = document.getElementById('btn-pause');
   el.btnResume = document.getElementById('btn-resume');
+  el.btnNextAgent = document.getElementById('btn-next-agent');
   el.btnStop = document.getElementById('btn-stop');
   el.btnExportProgress = document.getElementById('btn-export-progress');
   el.logsContainer = document.getElementById('logs-container');
@@ -67,11 +74,16 @@ function cacheElements() {
   el.dashError = document.getElementById('dash-error');
   el.heroSubtitle = document.getElementById('hero-subtitle');
   el.btnExportFinal = document.getElementById('btn-export-final');
+  el.btnCopyData = document.getElementById('btn-copy-data');
   el.btnNewSession = document.getElementById('btn-new-session');
 }
 
 /* ===== EVENT LISTENERS ===== */
 function setupEventListeners() {
+  if (el.btnDownloadTemplate) {
+    el.btnDownloadTemplate.addEventListener('click', downloadTemplate);
+  }
+
   // File upload — click
   el.uploadArea.addEventListener('click', () => el.fileInput.click());
   el.fileInput.addEventListener('change', (e) => {
@@ -102,9 +114,11 @@ function setupEventListeners() {
   el.btnStart.addEventListener('click', startProcessing);
   el.btnPause.addEventListener('click', pauseProcessing);
   el.btnResume.addEventListener('click', resumeProcessing);
+  el.btnNextAgent.addEventListener('click', resumeProcessing);
   el.btnStop.addEventListener('click', stopProcessing);
   el.btnExportProgress.addEventListener('click', exportResults);
   el.btnExportFinal.addEventListener('click', exportResults);
+  el.btnCopyData.addEventListener('click', copyResultsToClipboard);
   el.btnNewSession.addEventListener('click', newSession);
 }
 
@@ -123,7 +137,7 @@ async function checkExistingSession() {
       restoreSession(data.session);
     }
   } catch (e) {
-    console.error('[Compass] Failed to check session:', e);
+    console.error('[Deal] Failed to check session:', e);
   }
 }
 
@@ -152,6 +166,12 @@ function restoreSession(session) {
     if (automationState === 'PAUSED') {
       el.btnPause.classList.add('hidden');
       el.btnResume.classList.remove('hidden');
+      el.btnNextAgent.classList.add('hidden');
+      el.logIndicator.classList.add('paused');
+    } else if (automationState === 'PAUSED_FOR_NEXT_AGENT') {
+      el.btnPause.classList.add('hidden');
+      el.btnResume.classList.add('hidden');
+      el.btnNextAgent.classList.remove('hidden');
       el.logIndicator.classList.add('paused');
     }
   }
@@ -334,6 +354,7 @@ function resumeProcessing() {
   chrome.runtime.sendMessage({ action: 'resumeAutomation' });
   automationState = 'RUNNING';
   el.btnResume.classList.add('hidden');
+  el.btnNextAgent.classList.add('hidden');
   el.btnPause.classList.remove('hidden');
   el.logIndicator.classList.remove('paused');
   addLogEntry('info', '▶ Automation resumed');
@@ -372,6 +393,7 @@ async function newSession() {
   el.logIndicator.className = 'log-indicator';
   el.btnPause.classList.remove('hidden');
   el.btnResume.classList.add('hidden');
+  el.btnNextAgent.classList.add('hidden');
 }
 
 /* ===== UI UPDATE FUNCTIONS ===== */
@@ -533,6 +555,11 @@ function handleStateChange(state) {
     el.logIndicator.classList.add('stopped');
     addLogEntry('error', '⏹ Automation stopped');
     setTimeout(() => showDashboard(), 800);
+  } else if (state === 'PAUSED_FOR_NEXT_AGENT') {
+    el.btnPause.classList.add('hidden');
+    el.btnResume.classList.add('hidden');
+    el.btnNextAgent.classList.remove('hidden');
+    el.logIndicator.classList.add('paused');
   }
 }
 
@@ -566,13 +593,73 @@ function exportResults() {
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Compass_Closed_Deals_${formatDateForFile()}.xlsx`;
+  a.download = `Deals_Closed_${formatDateForFile()}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
   addLogEntry('info', '📥 Results exported successfully');
+}
+
+function copyResultsToClipboard() {
+  if (records.length === 0) {
+    showToast('No records to copy.');
+    return;
+  }
+
+  const header = ['Agent Profile Link', 'Listing IDs', 'Status'].join('\t');
+  const rows = records.map((r) => [r.agentUrl, r.listingId, r.status].join('\t'));
+  const tsv = [header, ...rows].join('\n');
+
+  navigator.clipboard.writeText(tsv).then(() => {
+    addLogEntry('info', '📋 Data copied to clipboard');
+    showToast('Data copied to clipboard!');
+  }).catch((err) => {
+    addLogEntry('error', '🔴 Failed to copy data: ' + err.message);
+    showToast('Failed to copy data.');
+  });
+}
+
+function downloadTemplate() {
+  const exportData = [];
+  // Create 1000 empty rows so Excel retains the format for them
+  for (let i = 0; i < 1000; i++) {
+    exportData.push({
+      'Agent Profile Link': '',
+      'Listing IDs': ''
+    });
+  }
+
+  const ws = XLSX.utils.json_to_sheet(exportData);
+
+  // Force 'Text' format (@) for the Listing IDs column (Column B, index 1)
+  for (let r = 1; r <= 1000; r++) {
+    const cellRef = XLSX.utils.encode_cell({ c: 1, r: r });
+    if (!ws[cellRef]) ws[cellRef] = { t: 's', v: '' };
+    ws[cellRef].z = '@';
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Template');
+
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 65 },  // Agent Profile Link
+    { wch: 25 }   // Listing IDs
+  ];
+
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Deals_Template.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /* ===== UTILITY FUNCTIONS ===== */

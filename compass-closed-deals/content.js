@@ -1,6 +1,6 @@
 /* ============================================
-   COMPASS - CLOSED DEALS | CONTENT SCRIPT
-   Injected into compass.com agent profile pages.
+  CLOSED DEALS | CONTENT SCRIPT
+   Injected into agent profile pages.
    Handles DOM automation with human-like behavior:
    smooth scrolling, character-by-character typing,
    and outcome detection via MutationObserver.
@@ -39,9 +39,9 @@ async function handleAddListingId(listingId) {
     clearInputField(input);
     await humanDelay(100, 250);
 
-    // Step 5: Type the listing ID character-by-character
-    await typeHumanLike(input, listingId);
-    await humanDelay(400, 900);
+    // Step 5: Paste the listing ID directly into the input (instant fill)
+    await pasteDirectly(input, listingId);
+    await humanDelay(300, 600);
 
     // Step 6: Find the ADD button
     const addButton = findAddButton();
@@ -72,7 +72,7 @@ async function handleAddListingId(listingId) {
     return { status };
 
   } catch (error) {
-    console.error('[Compass Content] Error:', error);
+    console.error('[Deal Content] Error:', error);
     return { status: `Error - ${error.message}` };
   }
 }
@@ -130,56 +130,41 @@ function clearInputField(input) {
 }
 
 /**
- * Type text into an input field character-by-character with human-like timing.
- * Dispatches realistic keyboard events for each character.
+ * Paste the listing ID directly into the input field at once.
+ * Uses native setter and dispatches input/change events for framework compatibility (React, etc.).
  */
-async function typeHumanLike(input, text) {
+async function pasteDirectly(input, text) {
+  input.focus();
+
+  // Dispatch paste event in case the page listens for paste actions
+  try {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData('text/plain', text);
+    const pasteEvent = new ClipboardEvent('paste', {
+      clipboardData: dataTransfer,
+      bubbles: true,
+      cancelable: true
+    });
+    input.dispatchEvent(pasteEvent);
+  } catch (e) {
+    // Fallback if ClipboardEvent construction is restricted
+  }
+
+  // Use native prototype setter to ensure React / UI frameworks detect the change
   const nativeSetter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
     'value'
-  ).set;
+  )?.set;
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const currentValue = text.substring(0, i + 1);
-
-    // Build event options for this character
-    const eventInit = {
-      key: char,
-      code: char >= '0' && char <= '9' ? `Digit${char}` : `Key${char.toUpperCase()}`,
-      keyCode: char.charCodeAt(0),
-      which: char.charCodeAt(0),
-      bubbles: true,
-      cancelable: true,
-      composed: true
-    };
-
-    // Dispatch keydown
-    input.dispatchEvent(new KeyboardEvent('keydown', eventInit));
-
-    // Set value using native setter (ensures framework compatibility)
-    nativeSetter.call(input, currentValue);
-
-    // Dispatch keypress
-    input.dispatchEvent(new KeyboardEvent('keypress', eventInit));
-
-    // Dispatch input event (critical for most frameworks)
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-
-    // Dispatch keyup
-    input.dispatchEvent(new KeyboardEvent('keyup', eventInit));
-
-    // Human-like inter-keystroke delay (50-150ms with occasional pauses)
-    let delay = randomInt(50, 150);
-    // Occasional longer pause (simulates human hesitation)
-    if (Math.random() < 0.1) {
-      delay += randomInt(80, 200);
-    }
-    await sleep(delay);
+  if (nativeSetter) {
+    nativeSetter.call(input, text);
+  } else {
+    input.value = text;
   }
 
-  // Final change event
-  input.dispatchEvent(new Event('change', { bubbles: true }));
+  // Dispatch input & change events
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 }
 
 /**

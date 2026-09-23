@@ -1,5 +1,5 @@
 /* ============================================
-   COMPASS - CLOSED DEALS | BACKGROUND SERVICE WORKER
+   Deal - CLOSED DEALS | BACKGROUND SERVICE WORKER
    Orchestrates the automation: tab management,
    message routing, auto-save, and human-like pacing.
    ============================================ */
@@ -73,7 +73,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'keepAlive') {
     // Keep service worker alive during automation
     if (session && session.state === 'RUNNING') {
-      console.log('[Compass] Keep-alive ping — automation active');
+      console.log('[Deal] Keep-alive ping — automation active');
     }
   }
 });
@@ -198,7 +198,15 @@ async function runAutomation() {
 
     // Delay before opening next agent's tab
     if (g < agentGroups.length - 1 && !isStopped) {
-      await humanDelay(1500, 3000);
+      session.state = 'PAUSED_FOR_NEXT_AGENT';
+      isPaused = false; // Ensure normal pause flag is false
+      saveSession();
+      addLog('warning', '⏸ Paused at agent boundary. Click "Run Next Agent" to continue.');
+      notifyPopup({ type: 'stateChange', state: 'PAUSED_FOR_NEXT_AGENT' });
+
+      while (session.state === 'PAUSED_FOR_NEXT_AGENT' && !isStopped) {
+        await sleep(500);
+      }
     }
   }
 
@@ -274,7 +282,7 @@ async function sendMessageToTab(tabId, message, maxRetries = 3) {
       return response;
     } catch (error) {
       if (attempt < maxRetries) {
-        console.log(`[Compass] Retry ${attempt}/${maxRetries} — waiting before retry...`);
+        console.log(`[] Retry ${attempt}/${maxRetries} — waiting before retry...`);
         await sleep(2000);
       } else {
         throw new Error(`Content script unreachable after ${maxRetries} attempts`);
@@ -322,7 +330,7 @@ async function saveSession() {
     try {
       await chrome.storage.local.set({ session });
     } catch (e) {
-      console.error('[Compass] Failed to save session:', e);
+      console.error('[Deal] Failed to save session:', e);
     }
   }
 }
@@ -334,7 +342,7 @@ chrome.runtime.onStartup?.addListener(async () => {
     // Session was interrupted (browser closed while running)
     data.session.state = 'STOPPED';
     await chrome.storage.local.set({ session: data.session });
-    console.log('[Compass] Interrupted session marked as stopped');
+    console.log('[Deal] Interrupted session marked as stopped');
   }
 });
 
