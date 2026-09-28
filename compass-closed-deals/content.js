@@ -25,23 +25,26 @@ async function handleAddListingId(listingId) {
       15000
     );
 
+    // Step 1.5: Wait for the ADD button to be ready (not spinning from previous request)
+    await waitForAddButtonReady(15000);
+
     // Step 2: Smooth-scroll to the input section (human-like)
     const section = input.closest('.layout-column')?.parentElement || input;
     section.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await humanDelay(600, 1200);
+    await humanDelay(400, 800);
 
     // Step 3: Click on the input to focus it (like a human would)
     input.click();
     input.focus();
-    await humanDelay(200, 400);
+    await humanDelay(150, 300);
 
     // Step 4: Clear any existing value in the input
     clearInputField(input);
-    await humanDelay(100, 250);
+    await humanDelay(100, 200);
 
     // Step 5: Paste the listing ID directly into the input (instant fill)
     await pasteDirectly(input, listingId);
-    await humanDelay(300, 600);
+    await humanDelay(200, 400);
 
     // Step 6: Find the ADD button
     const addButton = findAddButton();
@@ -67,7 +70,7 @@ async function handleAddListingId(listingId) {
     const status = await detectOutcome(cardCountBefore);
 
     // Step 10: Small delay for page to settle before next action
-    await humanDelay(400, 800);
+    await humanDelay(300, 600);
 
     return { status };
 
@@ -112,6 +115,40 @@ function waitForElement(selector, timeout = 10000) {
         reject(new Error('Element Not Found'));
       }
     }, timeout);
+  });
+}
+
+/**
+ * Wait for the ADD button to be present, visible, and not disabled/loading.
+ */
+function waitForAddButtonReady(timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    const startTime = Date.now();
+
+    const checkInterval = setInterval(() => {
+      if (resolved) return;
+
+      const btn = findAddButton();
+      if (btn) {
+        // Check if it's actually visible and not disabled
+        const rect = btn.getBoundingClientRect();
+        const isVisible = rect.width > 0 && rect.height > 0;
+        const isDisabled = btn.disabled || btn.hasAttribute('disabled');
+
+        if (isVisible && !isDisabled) {
+          resolved = true;
+          clearInterval(checkInterval);
+          resolve(btn);
+        }
+      }
+
+      if (Date.now() - startTime > timeout) {
+        resolved = true;
+        clearInterval(checkInterval);
+        reject(new Error('ADD Button not ready in time'));
+      }
+    }, 250);
   });
 }
 

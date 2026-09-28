@@ -20,7 +20,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       session = {
         state: 'RUNNING',
         records: message.records,
-        logs: []
+        logs: [],
+        runMode: message.runMode || 'MANUAL'
       };
       isPaused = false;
       isStopped = false;
@@ -198,14 +199,19 @@ async function runAutomation() {
 
     // Delay before opening next agent's tab
     if (g < agentGroups.length - 1 && !isStopped) {
-      session.state = 'PAUSED_FOR_NEXT_AGENT';
-      isPaused = false; // Ensure normal pause flag is false
-      saveSession();
-      addLog('warning', '⏸ Paused at agent boundary. Click "Run Next Agent" to continue.');
-      notifyPopup({ type: 'stateChange', state: 'PAUSED_FOR_NEXT_AGENT' });
+      if (session.runMode === 'AUTO') {
+        addLog('info', '🔄 Dynamic Mode: Navigating to next agent in 3 seconds...');
+        await humanDelay(3000, 3000);
+      } else {
+        session.state = 'PAUSED_FOR_NEXT_AGENT';
+        isPaused = false; // Ensure normal pause flag is false
+        saveSession();
+        addLog('warning', '⏸ Paused at agent boundary. Click "Run Next Agent" to continue.');
+        notifyPopup({ type: 'stateChange', state: 'PAUSED_FOR_NEXT_AGENT' });
 
-      while (session.state === 'PAUSED_FOR_NEXT_AGENT' && !isStopped) {
-        await sleep(500);
+        while (session.state === 'PAUSED_FOR_NEXT_AGENT' && !isStopped) {
+          await sleep(500);
+        }
       }
     }
   }

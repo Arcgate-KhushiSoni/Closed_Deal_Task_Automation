@@ -9,6 +9,7 @@ let records = [];
 let logs = [];
 let automationState = 'IDLE'; // IDLE, RUNNING, PAUSED, COMPLETED, STOPPED
 let stats = { total: 0, added: 0, exists: 0, invalid: 0, queue: 0, error: 0 };
+let currentActiveAgentUrl = null;
 
 /* ===== DOM CACHE ===== */
 const el = {};
@@ -54,6 +55,10 @@ function cacheElements() {
   el.statExists = document.getElementById('stat-exists');
   el.statInvalid = document.getElementById('stat-invalid');
   el.statQueue = document.getElementById('stat-queue');
+  el.statAgentTotal = document.getElementById('stat-agent-total');
+  el.statAgentProgress = document.getElementById('stat-agent-progress');
+  el.statAgentPending = document.getElementById('stat-agent-pending');
+  el.statAgentCompleted = document.getElementById('stat-agent-completed');
   el.progressFill = document.getElementById('progress-fill');
   el.progressText = document.getElementById('progress-text');
   el.processingAgent = document.getElementById('processing-agent');
@@ -146,8 +151,12 @@ function restoreSession(session) {
   logs = session.logs || [];
   automationState = session.state;
 
-  // Recalculate stats from records
-  recalcStats();
+  // Set current active agent from first incomplete record
+  const firstQueue = records.find(r => r.status === 'In Queue' || r.status === 'Processing');
+  currentActiveAgentUrl = firstQueue ? firstQueue.agentUrl : (records.length > 0 ? records[0].agentUrl : null);
+
+  // Recalculate stats from records for current agent
+  recalcStats(currentActiveAgentUrl);
 
   if (automationState === 'COMPLETED' || automationState === 'STOPPED') {
     showDashboard();
@@ -330,11 +339,15 @@ async function startProcessing() {
   const uniqueAgents = new Set(records.map((r) => r.agentUrl)).size;
   addLogEntry('info', `📂 Loaded ${records.length} records | ${uniqueAgents} unique agent${uniqueAgents !== 1 ? 's' : ''}`);
 
+  // Get run mode
+  const runMode = document.querySelector('input[name="runMode"]:checked').value;
+
   // Send to background
   try {
     await chrome.runtime.sendMessage({
       action: 'startAutomation',
-      records: records
+      records: records,
+      runMode: runMode
     });
   } catch (error) {
     addLogEntry('error', `🔴 Failed to start automation: ${error.message}`);
@@ -402,9 +415,16 @@ function showScreen(screenId) {
   document.getElementById(screenId).classList.add('active');
 }
 
-function recalcStats() {
-  stats = { total: records.length, added: 0, exists: 0, invalid: 0, queue: 0, error: 0 };
-  records.forEach((r) => {
+function recalcStats(agentUrlFilter = null) {
+  stats = { total: 0, added: 0, exists: 0, invalid: 0, queue: 0, error: 0 };
+  
+  const targetRecords = agentUrlFilter 
+    ? records.filter(r => r.agentUrl === agentUrlFilter) 
+    : records;
+
+  stats.total = targetRecords.length;
+
+  targetRecords.forEach((r) => {
     switch (r.status) {
       case 'Added By Listing ID': stats.added++; break;
       case 'Already Exists': stats.exists++; break;
@@ -424,6 +444,55 @@ function updateStatsUI() {
   el.statExists.textContent = stats.exists;
   el.statInvalid.textContent = stats.invalid;
   el.statQueue.textContent = stats.queue;
+
+  updateAgentStats();
+}
+
+function updateAgentStats() {
+  if (!records || records.length === 0) {
+    if (el.statAgentTotal) {
+      el.statAgentTotal.textContent = 0;
+      el.statAgentProgress.textContent = 0;
+      el.statAgentPending.textContent = 0;
+      el.statAgentCompleted.textContent = 0;
+    }
+    return;
+  }
+
+  const agentGroups = {};
+  records.forEach(r => {
+    if (!agentGroups[r.agentUrl]) {
+      agentGroups[r.agentUrl] = [];
+    }
+    agentGroups[r.agentUrl].push(r.status);
+  });
+
+  let totalAgents = 0;
+  let pendingAgents = 0;
+  let inProgressAgents = 0;
+  let completedAgents = 0;
+
+  for (const agentUrl in agentGroups) {
+    totalAgents++;
+    const statuses = agentGroups[agentUrl];
+    const isAllQueue = statuses.every(s => s === 'In Queue');
+    const isAllDone = statuses.every(s => s !== 'In Queue' && s !== 'Processing');
+
+    if (isAllQueue) {
+      pendingAgents++;
+    } else if (isAllDone) {
+      completedAgents++;
+    } else {
+      inProgressAgents++;
+    }
+  }
+
+  if (el.statAgentTotal) {
+    el.statAgentTotal.textContent = totalAgents;
+    el.statAgentProgress.textContent = inProgressAgents;
+    el.statAgentPending.textContent = pendingAgents;
+    el.statAgentCompleted.textContent = completedAgents;
+  }
 }
 
 function updateProgressBar() {
@@ -458,13 +527,19 @@ function scrollLogsToBottom() {
 }
 
 function updateCurrentProcessing(agentUrl, listingId) {
+  if (currentActiveAgentUrl !== agentUrl) {
+    currentActiveAgentUrl = agentUrl;
+    recalcStats(currentActiveAgentUrl);
+    updateStatsUI();
+    updateProgressBar();
+  }
   el.processingAgent.textContent = truncateUrl(agentUrl);
   el.processingAgent.title = agentUrl;
   el.processingListing.textContent = listingId || '—';
 }
 
 function showDashboard() {
-  recalcStats();
+  recalcStats(null); // Force overall stats for dashboard
 
   el.dashTotal.textContent = stats.total;
   el.dashAdded.textContent = stats.added;
@@ -504,7 +579,7 @@ function handleBackgroundMessage(message) {
       // Full records sync from background
       if (message.records) {
         records = message.records;
-        recalcStats();
+        recalcStats(currentActiveAgentUrl);
         updateStatsUI();
         updateProgressBar();
       }
@@ -516,31 +591,15 @@ function handleStatusUpdate(msg) {
   const record = records[msg.recordIndex];
   if (!record) return;
 
-  // Decrement old status counter
-  const oldStatus = record.status;
-  if (oldStatus === 'In Queue' || oldStatus === 'Processing') stats.queue--;
-  else if (oldStatus === 'Added By Listing ID') stats.added--;
-  else if (oldStatus === 'Already Exists') stats.exists--;
-  else if (oldStatus === 'Invalid Listing ID') stats.invalid--;
-  else if (oldStatus.startsWith('Error')) stats.error--;
-
   // Update record
   record.status = msg.status;
 
-  // Increment new status counter
-  switch (msg.status) {
-    case 'Added By Listing ID': stats.added++; break;
-    case 'Already Exists': stats.exists++; break;
-    case 'Invalid Listing ID': stats.invalid++; break;
-    case 'In Queue': case 'Processing': stats.queue++; break;
-    default:
-      if (msg.status.startsWith('Error')) stats.error++;
-      else stats.queue++;
-      break;
+  // Only update UI if the record belongs to the current agent
+  if (record.agentUrl === currentActiveAgentUrl) {
+    recalcStats(currentActiveAgentUrl);
+    updateStatsUI();
+    updateProgressBar();
   }
-
-  updateStatsUI();
-  updateProgressBar();
 }
 
 function handleStateChange(state) {
